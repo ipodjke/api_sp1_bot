@@ -1,22 +1,44 @@
+import logging
 import os
+import sys
 import time
 
 import requests
 import telegram
-import logging
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-PRAKTIKUM_TOKEN = os.getenv("PRAKTIKUM_TOKEN")
+PRAKTIKUM_TOKEN = os.getenv('PRAKTIKUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s, %(levelname)s, %(name)s, %(message)s'
+FORMATTER = logging.Formatter(
+    '%(asctime)s, %(levelname)s, %(name)s, %(message)s'
 )
+
+
+class CustomHandler(logging.Handler):
+    def emit(self, record):
+        if record.levelname != 'ERROR' or record.levelname != 'CRITICAL':
+            return None
+        text = (f'{record.asctime}, {record.levelname},'
+                f' {record.name}, {record.message}')
+        url = (f'https://api.telegram.org/bot{TELEGRAM_TOKEN}'
+               f'/sendMessage?chat_id={CHAT_ID}&text={text}')
+        return requests.get(url)
+
+
+logger = logging.getLogger(f'{__name__}__base_logger')
+logger.setLevel(logging.DEBUG)
+
+handler = logging.StreamHandler(sys.stdout)
+handler.setFormatter(FORMATTER)
+logger.addHandler(handler)
+logger.addHandler(CustomHandler())
+
+logger.propagate = False
 
 
 def parse_homework_status(homework):
@@ -31,7 +53,7 @@ def parse_homework_status(homework):
 
 def get_homework_statuses(current_timestamp):
     params = {
-        'from_date': current_timestamp - 1000000,
+        'from_date': current_timestamp,
     }
     headers = {
         'Authorization': f'OAuth {PRAKTIKUM_TOKEN}'
@@ -51,7 +73,7 @@ def send_message(message, bot_client):
 def main():
     current_timestamp = int(time.time())
     bot_client = telegram.Bot(token=TELEGRAM_TOKEN)
-    logging.debug('Bot started!')
+    logger.debug('Bot started!')
     while True:
         try:
             new_homework = get_homework_statuses(current_timestamp)
@@ -60,11 +82,12 @@ def main():
                     parse_homework_status(new_homework.get('homeworks')[0]),
                     bot_client
                 )
+                logger.info('Message sent!')
             current_timestamp = new_homework.get(
                 'current_date',
                 current_timestamp
             )
-            time.sleep(1500)
+            time.sleep(1200)
 
         except Exception as e:
             print(f'Бот столкнулся с ошибкой: {e}')
