@@ -42,7 +42,7 @@ logger.propagate = False
 
 
 def parse_homework_status(homework):
-    homework_name = homework['homework_name'].split('__')[1].split('.')[0]
+    homework_name = homework['homework_name'].split('__')[-1].split('.')[0]
     if homework['status'] == 'rejected':
         verdict = 'К сожалению в работе нашлись ошибки.'
     else:
