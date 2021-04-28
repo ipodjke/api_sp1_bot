@@ -6,13 +6,23 @@ import time
 import requests
 import telegram
 from dotenv import load_dotenv
+from telegram.error import TelegramError
 
 load_dotenv()
 
+URL = 'https://praktikum.yandex.ru/'
+API = 'api/'
+SERVICE = 'user_api/'
+DATA = 'homework_statuses/'
 
-PRAKTIKUM_TOKEN = os.getenv('PRAKTIKUM_TOKEN')
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+COOLDOWN_QUERY = 1200
+SLEEP_TIME_ERROR = 5
+try:
+    PRAKTIKUM_TOKEN = os.environ['PRAKTIKUM_TOKEN']
+    TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN']
+    CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
+except KeyError as err:
+    exit(f'Отсутствует значение переменной: {err}')
 
 FORMATTER = logging.Formatter(
     '%(asctime)s, %(levelname)s, %(name)s, %(message)s'
@@ -21,7 +31,7 @@ FORMATTER = logging.Formatter(
 
 class CustomHandler(logging.Handler):
     def emit(self, record):
-        if record.levelname != 'ERROR' or record.levelname != 'CRITICAL':
+        if record.levelname != 'ERROR':
             return None
         text = (f'{record.asctime}, {record.levelname},'
                 f' {record.name}, {record.message}')
@@ -42,13 +52,24 @@ logger.propagate = False
 
 
 def parse_homework_status(homework):
-    homework_name = homework['homework_name'].split('__')[-1].split('.')[0]
-    if homework['status'] == 'rejected':
-        verdict = 'К сожалению в работе нашлись ошибки.'
-    else:
-        verdict = ('Ревьюеру всё понравилось,'
-                   ' можно приступать к следующему уроку.')
-    return f'У вас проверили работу "{homework_name}"!\n\n{verdict}'
+    name = homework.get('homework_name')
+    if not name:
+        logger.debug('Homework have no homework_name key')
+        return None
+    name = name.split('__')[-1].split('.')[0]
+    status_messages = {
+        'rejected': (f'У вас проверили работу "{name}"!\n\n'
+                     'К сожалению в работе нашлись ошибки.'),
+        'approved': (f'У вас проверили работу "{name}"!\n\n'
+                     'Ревьюеру всё понравилось, можно приступать к'
+                     ' следующему уроку.'),
+        'reviewing': f'Ревьювер принял "{name}" на рассмотрение.',
+    }
+    result = status_messages.get(homework.get('status'))
+    if not result:
+        logger.debug('Homework wrong status key')
+        return None
+    return result
 
 
 def get_homework_statuses(current_timestamp):
@@ -59,15 +80,24 @@ def get_homework_statuses(current_timestamp):
         'Authorization': f'OAuth {PRAKTIKUM_TOKEN}'
     }
     homework_statuses = requests.get(
-        'https://praktikum.yandex.ru/api/user_api/homework_statuses/',
+        '{}{}{}{}'.format(URL, API, SERVICE, DATA),
         params=params,
         headers=headers,
     )
+    if homework_statuses is None:
+        homework_statuses = {}
     return homework_statuses.json()
 
 
 def send_message(message, bot_client):
-    return bot_client.send_message(chat_id=CHAT_ID, text=message)
+    if message is None:
+        logger.debug("Message don't send because message is None!")
+    try:
+        result = bot_client.send_message(chat_id=CHAT_ID, text=message)
+        logger.info('Message send!')
+        return result
+    except TelegramError as e:
+        logger.error(f'Ошибка отправки телеграмм: {e}')
 
 
 def main():
@@ -82,16 +112,14 @@ def main():
                     parse_homework_status(new_homework.get('homeworks')[0]),
                     bot_client
                 )
-                logger.info('Message sent!')
             current_timestamp = new_homework.get(
                 'current_date',
                 current_timestamp
             )
-            time.sleep(1200)
-
+            time.sleep(COOLDOWN_QUERY)
         except Exception as e:
-            print(f'Бот столкнулся с ошибкой: {e}')
-            time.sleep(5)
+            logger.error(f'Бот столкнулся с ошибкой: {e}')
+            time.sleep(SLEEP_TIME_ERROR)
 
 
 if __name__ == '__main__':
