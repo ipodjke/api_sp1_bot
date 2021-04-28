@@ -17,6 +17,7 @@ DATA = 'homework_statuses/'
 
 COOLDOWN_QUERY = 1200
 SLEEP_TIME_ERROR = 5
+
 try:
     PRAKTIKUM_TOKEN = os.environ['PRAKTIKUM_TOKEN']
     TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN']
