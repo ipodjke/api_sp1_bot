@@ -85,6 +85,7 @@ def get_homework_statuses(current_timestamp):
         headers=headers,
     )
     if homework_statuses is None:
+        logger.debug("Cann't do request.get for homework_statuses")
         homework_statuses = {}
     return homework_statuses.json()
 
